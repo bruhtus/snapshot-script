@@ -1,0 +1,134 @@
+#!/bin/dash
+
+user_id="$(\id -u)" || exit $?
+
+[ "$user_id" != 0 ] && printf '%s\n' "$0: Permission denied." 'Need root access.' && exit 2
+
+backup_dir='/root/backup'
+target_snapshot='/'
+exclude_file='./exclude.list'
+device="${dev:-nvme0n1p3}"
+
+[ ! -z "$dry_run" ] && dry_run='--dry-run'
+
+[ ! -z "$1" ] && {
+  echo "Mounted /dev/$device at $backup_dir"
+  mount --mkdir /dev/$device $backup_dir || exit $?
+}
+
+list_snapshot="$(\ls -d --time=creation $backup_dir/*/snapshot/ 2>>/tmp/rsync-snapshot-error.log)" || list_snapshot_exit_code=$?
+
+[ ! -z $list_snapshot_exit_code ] && [ ! -z "$1" ] && {
+  {
+    [ $list_snapshot_exit_code = 2 ] && [ "$1" = backup ] && echo 'No snapshot found, create new snapshot'
+  } || {
+    [ $list_snapshot_exit_code != 2 ] && echo 'There is an error, check /tmp/rsync-snapshot-error.log' && exit $list_snapshot_exit_code
+  }
+}
+
+[ ! -z "$list_snapshot" ] && prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)"
+current_date="$(date +'%F_%H-%M-%S')"
+
+rsync_cmd() {
+  {
+    rsync -a --delete --numeric-ids --exclude-from="$exclude_file" --sparse --info=progress2,stats2 $dry_run $*
+    umount -l /dev/$device
+  } || {
+    local rsync_exit_code=$?
+    umount -l /dev/$device
+    exit $rsync_exit_code
+  }
+}
+
+backup() {
+  # so that we can create the log file.
+  # seems like `--mkpath` comes after creating log file.
+  [ -z "$dry_run" ] && \
+    \mkdir -p "$backup_dir/$current_date" && \
+    log_file="--log-file=$backup_dir/$current_date/changes.log"
+
+  [ ! -z "$prev_snapshot" ] && \
+    echo "Hard link $prev_snapshot" && \
+    rsync_cmd --link-dest="$prev_snapshot" --mkpath $log_file "$target_snapshot" "$backup_dir/$current_date/snapshot/" || \
+    rsync_cmd --mkpath $log_file "$target_snapshot" "$backup_dir/$current_date/snapshot/"
+}
+
+restore() {
+  [ ! -z "$1" ] && \
+    selected_snapshot=$(printf '%s\n' "$list_snapshot" | \grep $1) || \
+    selected_snapshot=$prev_snapshot
+
+  # after update the system,
+  # we need to reexecute systemd manager after restore from snapshot before update.
+  # also, check whether we are in chroot environment or not before reexecute or reload systemd.
+  [ ! -z "$selected_snapshot" ] && {
+    echo "Restoring from $selected_snapshot" &&
+    rsync_cmd "$selected_snapshot" "$target_snapshot" &&
+    {
+        $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') &&
+          command -v systemctl >/dev/null &&
+          [ -z "$dry_run" ] && {
+          grep -qF '(deleted)' /proc/1/maps &&
+          echo 'Restart systemd...' && systemctl daemon-reexec ||
+          echo 'Reload systemd...' && systemctl daemon-reload
+      } ||
+        echo 'Skipping systemd restart/reload'
+    }
+  } || {
+    echo 'There is no snapshot, nothing to restore.' &&
+    umount -l /dev/$device &&
+    exit 1
+  }
+}
+
+ls() {
+  [ ! -z "$list_snapshot" ] && {
+    printf '%s\n' "$list_snapshot" | sed --expression='s/[a-z/]//g'
+  }
+  umount -l /dev/$device
+}
+
+remove() {
+  {
+    {
+      [ ! -z "$1" ] || {
+        echo 'Please specify snapshot to remove.' &&
+        umount -l /dev/$device &&
+        exit 1
+      }
+    } && {
+      [ -d "$backup_dir/$1" ] || {
+        echo "Snapshot $1 not found." &&
+        umount -l /dev/$device &&
+        exit 1
+      }
+    }
+  } && {
+    echo "Remove snapshot $backup_dir/$1" &&
+    \rm -r "$backup_dir/$1"
+
+    umount -l /dev/$device
+  }
+}
+
+case "$1" in
+  backup)
+    backup
+    ;;
+  restore)
+    restore "$2"
+    ;;
+  ls)
+    ls
+    ;;
+  rm)
+    remove "$2"
+    ;;
+  *)
+    printf "Usage:
+- [dry_run=1] [dev=sda1, check lsblk] $0 backup
+- [dry_run=1] [dev=sda1, check lsblk] $0 restore [year-month-date_hour-minute-second]
+- $0 ls
+- $0 rm year-month-date_hour-minute-second\n"
+    ;;
+esac

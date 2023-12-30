@@ -1,0 +1,17 @@
+/dev/*
+/proc/*
+/sys/*
+/media/*
+/mnt/*
+/tmp/*
+/run/*
+/var/run/*
+/var/lock/*
+/var/lib/dhcpcd/*
+/var/lib/docker/*
+/var/lib/schroot/*
+/lost+found
+/swapfile
+/root/*
+/home/*
+/var/cache/*
