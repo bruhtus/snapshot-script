@@ -69,6 +69,7 @@ restore() {
     rsync_cmd "$selected_snapshot" "$target_snapshot" &&
     {
         $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') &&
+          [ -d /run/systemd/system ] &&
           command -v systemctl >/dev/null &&
           [ -z "$dry_run" ] && {
             if grep -qF '(deleted)' /proc/1/maps; then
