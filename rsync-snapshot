@@ -61,6 +61,9 @@ restore() {
   # after update the system,
   # we need to reexecute systemd manager after restore from snapshot before update.
   # also, check whether we are in chroot environment or not before reexecute or reload systemd.
+  # reference on arch linux:
+  # - /usr/share/libalpm/scripts/systemd-hook
+  # - /usr/bin/checkservices
   [ ! -z "$selected_snapshot" ] && {
     echo "Restoring from $selected_snapshot" &&
     rsync_cmd "$selected_snapshot" "$target_snapshot" &&
@@ -68,11 +71,15 @@ restore() {
         $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') &&
           command -v systemctl >/dev/null &&
           [ -z "$dry_run" ] && {
-          grep -qF '(deleted)' /proc/1/maps &&
-          echo 'Restart systemd...' && systemctl daemon-reexec ||
-          echo 'Reload systemd...' && systemctl daemon-reload
-      } ||
-        echo 'Skipping systemd restart/reload'
+            if grep -qF '(deleted)' /proc/1/maps; then
+              echo 'Restart systemd system...'
+              systemctl --system daemon-reexec || exit $?
+            else
+              echo 'Reload systemd system...'
+              systemctl --system daemon-reload || exit $?
+            fi
+          } ||
+          echo 'Skipping systemd restart/reload'
     }
   } || {
     echo 'There is no snapshot, nothing to restore.' &&
