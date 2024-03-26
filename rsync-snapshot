@@ -30,14 +30,21 @@ list_snapshot="$(\ls -d --time=creation $backup_dir/*/snapshot/ 2>>/tmp/rsync-sn
 current_date="$(date +'%F_%H-%M-%S')"
 
 rsync_cmd() {
-  {
-    rsync -a --delete --numeric-ids --exclude-from="$exclude_file" --sparse --info=progress2,stats2 $dry_run $*
-    umount -l /dev/$device
-  } || {
-    local rsync_exit_code=$?
-    umount -l /dev/$device
-    exit $rsync_exit_code
-  }
+  rsync \
+    -a \
+    --delete \
+    --numeric-ids \
+    --exclude-from="$exclude_file" \
+    --sparse \
+    --info=progress2,stats2 \
+    $dry_run \
+    $* || {
+    local rsync_exit_code="$?"
+      umount -l /dev/$device
+      exit $rsync_exit_code
+    }
+
+  umount -l /dev/$device
 }
 
 backup() {
@@ -47,10 +54,18 @@ backup() {
     \mkdir -p "$backup_dir/$current_date" && \
     log_file="--log-file=$backup_dir/$current_date/changes.log"
 
-  [ ! -z "$prev_snapshot" ] && \
-    echo "Hard link $prev_snapshot" && \
-    rsync_cmd --link-dest="$prev_snapshot" --mkpath $log_file "$target_snapshot" "$backup_dir/$current_date/snapshot/" || \
-    rsync_cmd --mkpath $log_file "$target_snapshot" "$backup_dir/$current_date/snapshot/"
+  if [ ! -z "$prev_snapshot" ]; then
+    echo "Hard link $prev_snapshot"
+    rsync_cmd \
+      --link-dest="$prev_snapshot" \
+      --mkpath $log_file \
+      "$target_snapshot" "$backup_dir/$current_date/snapshot/"
+
+  else
+    rsync_cmd \
+      --mkpath $log_file \
+      "$target_snapshot" "$backup_dir/$current_date/snapshot/"
+  fi
 }
 
 restore() {
@@ -64,9 +79,10 @@ restore() {
   # reference on arch linux:
   # - /usr/share/libalpm/scripts/systemd-hook
   # - /usr/bin/checkservices
-  [ ! -z "$selected_snapshot" ] && {
-    echo "Restoring from $selected_snapshot" &&
-    rsync_cmd "$selected_snapshot" "$target_snapshot" &&
+  if [ ! -z "$selected_snapshot" ]; then
+    echo "Restoring from $selected_snapshot"
+    rsync_cmd "$selected_snapshot" "$target_snapshot"
+
     {
         $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') &&
           [ -d /run/systemd/system ] &&
@@ -81,12 +97,14 @@ restore() {
             fi
           } ||
           echo 'Skipping systemd restart/reload'
+          exit
     }
-  } || {
-    echo 'There is no snapshot, nothing to restore.' &&
-    umount -l /dev/$device &&
+
+  else
+    echo 'There is no snapshot, nothing to restore.'
+    umount -l /dev/$device
     exit 1
-  }
+  fi
 }
 
 ls() {
