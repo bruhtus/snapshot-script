@@ -16,17 +16,9 @@ device="${dev:-nvme0n1p3}"
   mount --mkdir /dev/$device $backup_dir || exit $?
 }
 
-list_snapshot="$(\ls -d --time=creation $backup_dir/*/snapshot/ 2>>/tmp/rsync-snapshot-error.log)" || list_snapshot_exit_code=$?
+list_snapshot="$(\find $backup_dir/ -mindepth 1 -maxdepth 1 -type d | sort -nr)" || exit "$?"
 
-[ ! -z $list_snapshot_exit_code ] && [ ! -z "$1" ] && {
-  {
-    [ $list_snapshot_exit_code = 2 ] && [ "$1" = backup ] && echo 'No snapshot found, create new snapshot'
-  } || {
-    [ $list_snapshot_exit_code != 2 ] && echo 'There is an error, check /tmp/rsync-snapshot-error.log' && exit $list_snapshot_exit_code
-  }
-}
-
-[ ! -z "$list_snapshot" ] && prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)"
+[ ! -z "$list_snapshot" ] && prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)/snapshot/"
 current_date="$(date +'%F_%H-%M-%S')"
 
 rsync_cmd() {
@@ -69,9 +61,18 @@ backup() {
 }
 
 restore() {
-  [ ! -z "$1" ] && \
-    selected_snapshot=$(printf '%s\n' "$list_snapshot" | \grep $1) || \
-    selected_snapshot=$prev_snapshot
+  if [ ! -z "$1" ]; then
+    local grep_snapshot
+    grep_snapshot="$(printf '%s\n' "$list_snapshot" | \grep $1)" || {
+      local exit_code="$?"
+      [ "$exit_code" = 1 ] || exit "$exit_code"
+    }
+
+    [ ! -z "$grep_snapshot" ] && selected_snapshot="$grep_snapshot/snapshot/"
+
+  else
+    selected_snapshot="$prev_snapshot"
+  fi
 
   # after update the system,
   # we need to reexecute systemd manager after restore from snapshot before update.
