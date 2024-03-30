@@ -83,22 +83,23 @@ restore() {
     echo "Restoring from $selected_snapshot"
     rsync_cmd "$selected_snapshot" "$target_snapshot"
 
-    {
-        $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') &&
-          [ -d /run/systemd/system ] &&
-          command -v systemctl >/dev/null &&
-          [ -z "$dry_run" ] && {
-            if grep -qF '(deleted)' /proc/1/maps; then
-              echo 'Restart systemd system...'
-              systemctl --system daemon-reexec || exit $?
-            else
-              echo 'Reload systemd system...'
-              systemctl --system daemon-reload || exit $?
-            fi
-          } ||
-          echo 'Skipping systemd restart/reload'
-          exit
-    }
+    if $(stat -c %d:%i / /proc/1/root/ | awk -v RS= '{exit $1 != $2}') && \
+      [ -d /run/systemd/system ] && \
+      command -v systemctl >/dev/null && \
+      [ -z "$dry_run" ]; then
+
+      if grep -qF '(deleted)' /proc/1/maps; then
+        echo 'Restart systemd system...'
+        systemctl --system daemon-reexec || exit $?
+      else
+        echo 'Reload systemd system...'
+        systemctl --system daemon-reload || exit $?
+      fi
+
+    else
+      echo 'Skipping systemd restart/reload'
+      exit
+    fi
 
   else
     echo 'There is no snapshot, nothing to restore.'
