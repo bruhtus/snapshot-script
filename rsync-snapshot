@@ -120,20 +120,21 @@ remove() {
   {
     {
       [ ! -z "$1" ] || {
-        echo 'Please specify snapshot to remove.' &&
-        umount -l /dev/$device &&
+        echo 'Please specify snapshot to remove.'
+        umount -l /dev/$device
         exit 1
       }
     } && {
       [ -d "$backup_dir/$1" ] || {
-        echo "Snapshot $1 not found." &&
-        umount -l /dev/$device &&
+        echo "Snapshot $1 not found."
+        umount -l /dev/$device
         exit 1
       }
     }
   } && {
-    echo "Remove snapshot $backup_dir/$1" &&
+    echo "Remove snapshot $backup_dir/$1"
     \rm -r "$backup_dir/$1"
+    echo "Removed"
 
     umount -l /dev/$device
   }
