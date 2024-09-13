@@ -14,7 +14,7 @@ device="${dev:-nvme0n1p3}"
 [ ! -z "$dry_run" ] && dry_run='--dry-run'
 
 [ ! -z "$1" ] && {
-  echo "Mounted /dev/$device at $backup_dir"
+  echo "Mounting /dev/$device at $backup_dir"
   mount --mkdir /dev/$device $backup_dir || exit $?
 }
 
@@ -24,6 +24,11 @@ list_snapshot="$(\find $backup_dir/ -mindepth 1 -maxdepth 1 -type d | sort -nr)"
   prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)/snapshot/"
 
 current_date="$(date +'%F_%H-%M-%S')"
+
+unmount_dev() {
+  echo "Unmounting /dev/$device"
+  umount -l /dev/$device
+}
 
 rsync_cmd() {
   rsync \
@@ -36,11 +41,11 @@ rsync_cmd() {
     $dry_run \
     $* || {
     local rsync_exit_code="$?"
-      umount -l /dev/$device
+      unmount_dev
       exit $rsync_exit_code
     }
 
-  umount -l /dev/$device
+    unmount_dev
 }
 
 backup() {
@@ -110,7 +115,7 @@ restore() {
 
   else
     echo 'There is no snapshot, nothing to restore.'
-    umount -l /dev/$device
+    unmount_dev
     exit 1
   fi
 }
@@ -119,7 +124,7 @@ ls() {
   [ ! -z "$list_snapshot" ] && {
     printf '%s\n' "$list_snapshot" | sed --expression='s/[a-z/]//g'
   }
-  umount -l /dev/$device
+  unmount_dev
 }
 
 remove() {
@@ -127,13 +132,13 @@ remove() {
     {
       [ ! -z "$1" ] || {
         echo 'Please specify snapshot to remove.'
-        umount -l /dev/$device
+        unmount_dev
         exit 1
       }
     } && {
       [ -d "$backup_dir/$1" ] || {
         echo "Snapshot $1 not found."
-        umount -l /dev/$device
+        unmount_dev
         exit 1
       }
     }
@@ -142,7 +147,7 @@ remove() {
     \rm -r "$backup_dir/$1"
     echo "Removed"
 
-    umount -l /dev/$device
+    unmount_dev
   }
 }
 
