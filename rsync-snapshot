@@ -2,7 +2,9 @@
 
 user_id="$(\id -u)" || exit $?
 
-[ "$user_id" != 0 ] && printf '%s\n' "$0: Permission denied." 'Need root access.' && exit 2
+[ "$user_id" != 0 ] && \
+  printf '%s\n' "$0: Permission denied." 'Need root access.' && \
+  exit 2
 
 backup_dir='/root/backup'
 target_snapshot='/'
@@ -18,7 +20,9 @@ device="${dev:-nvme0n1p3}"
 
 list_snapshot="$(\find $backup_dir/ -mindepth 1 -maxdepth 1 -type d | sort -nr)" || exit "$?"
 
-[ ! -z "$list_snapshot" ] && prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)/snapshot/"
+[ ! -z "$list_snapshot" ] && \
+  prev_snapshot="$(printf '%s\n' "$list_snapshot" | head -1)/snapshot/"
+
 current_date="$(date +'%F_%H-%M-%S')"
 
 rsync_cmd() {
@@ -75,8 +79,10 @@ restore() {
   fi
 
   # after update the system,
-  # we need to reexecute systemd manager after restore from snapshot before update.
-  # also, check whether we are in chroot environment or not before reexecute or reload systemd.
+  # we need to reexecute systemd manager after restore from snapshot before
+  # update.
+  # also, check whether we are in chroot environment or not before reexecute
+  # or reload systemd.
   # reference on arch linux:
   # - /usr/share/libalpm/scripts/systemd-hook
   # - /usr/bin/checkservices
